@@ -1,0 +1,4 @@
+.pio
+.vscode
+test
+sdkconfig.esp32dev.old
