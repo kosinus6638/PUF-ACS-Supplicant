@@ -4,9 +4,14 @@
 #include <esp_vfs_dev.h>
 
 
+constexpr int NOTIFY_DELAY_MS = 50;
+
+
 void register_handler() {
     printf("register_ok\r");
     fflush(stdout);
+
+    vTaskDelay( NOTIFY_DELAY_MS/portTICK_PERIOD_MS);
 
     // Notify main task
     xTaskNotify(main_tsk_hdl, CMD::REGISTER, eSetValueWithOverwrite);
@@ -16,6 +21,8 @@ void register_handler() {
 void connect_handler() {
     printf("connect_ok\r");
     fflush(stdout);
+
+    vTaskDelay( NOTIFY_DELAY_MS/portTICK_PERIOD_MS);
 
     // Notify main task
     xTaskNotify(main_tsk_hdl, CMD::CONNECT, eSetValueWithOverwrite);
@@ -70,6 +77,8 @@ void speedtest_handler() {
     /* Send ack */
     printf("values_ok\r");
     fflush(stdout);
+    
+    vTaskDelay( NOTIFY_DELAY_MS/portTICK_PERIOD_MS);
 
     /* Notify main task */
     xTaskNotify(main_tsk_hdl, CMD::SPEEDTEST, eSetValueWithOverwrite);
