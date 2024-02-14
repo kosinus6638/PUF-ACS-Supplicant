@@ -5,10 +5,45 @@
 
 
 constexpr int NOTIFY_DELAY_MS = 50;
+constexpr char EOL = '\x04';
+
+
+size_t serial_send(const char* buffer) {
+    size_t n = 0, n_written = 0;
+    size_t bufSize = strlen(buffer);
+
+    do {
+        n = write(STDOUT_FILENO, static_cast<const void*>(buffer+n_written), 1);
+        n_written += n;
+    } while(n>0 && n_written<bufSize);
+
+    write(STDOUT_FILENO, &EOL, 1);  // Send EOL
+
+    fflush(stdout);
+    return n_written;
+}
+
+
+size_t serial_receive(char* buffer, size_t bufSize) {
+    char buf = '\0';
+    size_t n = 0, n_written = 0;
+
+    do {
+        if( (n = read(STDIN_FILENO, &buf, 1)) == 1 ) {
+            buffer[n_written++] = buf;
+            n_written %= bufSize;   // Dirty little hack to prevent buffer overflows
+        }
+    } while(n>0 && buf != EOL);
+
+    --n_written;
+
+    buffer[n_written] = '\0';   // Replace EOL with null
+    return n_written;  // Returns no nullbyte but includes EOL
+}
 
 
 void register_handler() {
-    printf("register_ok\r");
+    serial_send("register_ok");
     fflush(stdout);
 
     vTaskDelay( NOTIFY_DELAY_MS/portTICK_PERIOD_MS);
@@ -19,7 +54,7 @@ void register_handler() {
 
 
 void connect_handler() {
-    printf("connect_ok\r");
+    serial_send("connect_ok");
     fflush(stdout);
 
     vTaskDelay( NOTIFY_DELAY_MS/portTICK_PERIOD_MS);
@@ -32,19 +67,19 @@ void connect_handler() {
 void status_handler() {
     switch(global_err) {
         case 0:
-            printf("no_err\r");
+            serial_send("no_err");
             break;
         case 1:
-            printf("signup_err\r");
+            serial_send("signup_err");
             break;
         case 2:
-            printf("connect_err\r");
+            serial_send("connect_err");
             break;
         case 3:
-            printf("not_connected_err\r");
+            serial_send("not_connected_err");
             break;
         default:
-            printf("unkown_err\r");
+            serial_send("unkown_err");
     }
 
     fflush(stdout);
@@ -58,13 +93,13 @@ void speedtest_handler() {
     char delim;
 
     /* Send ack */
-    printf("speedtest_ok\r");
+    serial_send("speedtest_ok");
     fflush(stdout);
 
     /* Wait for values */
-    scanf("%s", cmd_buf);
-    if( sscanf(cmd_buf, "%c%d%c%d%c%d\r", &delim, &seconds, &delim, &delay_us, &delim, &frame_size) == EOF) {
-        printf("err\r");
+    serial_receive(cmd_buf, sizeof(cmd_buf));
+    if( sscanf(cmd_buf, "%c%d%c%d%c%d", &delim, &seconds, &delim, &delay_us, &delim, &frame_size) == EOF) {
+        serial_send("err");
         fflush(stdout);
         return;
     }
@@ -75,7 +110,7 @@ void speedtest_handler() {
     opts.frame_size = frame_size;
 
     /* Send ack */
-    printf("values_ok\r");
+    serial_send("values_ok");
     fflush(stdout);
     
     vTaskDelay( NOTIFY_DELAY_MS/portTICK_PERIOD_MS);
@@ -86,21 +121,17 @@ void speedtest_handler() {
 
 
 void cmd_task(void *pvParamter) {
-    printf("Executing cmd on core: %d\n", xPortGetCoreID());
-    fflush(stdout);
-
-    /* Install UART driver for interrupt-driven reads and writes */
-    uart_driver_install(CONFIG_CONSOLE_UART_NUM, 256, 0, 0, NULL, 0);
-
-    /* Tell VFS to use UART driver */
-    esp_vfs_dev_uart_use_driver(CONFIG_CONSOLE_UART_NUM);    // This causes everything to be slower
-
     char cmd_buf[512];
+
+    snprintf(cmd_buf, sizeof(cmd_buf), "Executing cmd on core: %d with EOL: %02x\n", xPortGetCoreID(), EOL);
+    serial_send(cmd_buf);
+
+    fflush(stdout);
+    fflush(stdin);
+
     while(true) {
         memset(cmd_buf, 0, sizeof(cmd_buf));
-
-        fflush(stdout);
-        scanf("%s", cmd_buf);
+        serial_receive(cmd_buf, sizeof(cmd_buf));
 
         if(      strcmp(cmd_buf, "register") == 0 )     register_handler();
         else if( strcmp(cmd_buf, "status") == 0 )       status_handler();
